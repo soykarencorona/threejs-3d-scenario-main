@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Escenario 3D con Efectos Avanzados</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body { margin: 0; overflow: hidden; }
+    #info { position: absolute; top: 10px; width: 100%; text-align: center; z-index: 100; color: white; font-family: sans-serif; text-shadow: 0 0 10px rgba(0,200,255,0.7); }
+    #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-family: sans-serif; font-size: 24px; text-shadow: 0 0 10px rgba(0,200,255,0.7); }
+    #keyInfo { position: absolute; bottom: 10px; left: 10px; padding: 10px; background: rgba(0,0,0,0.5); color: #0ff; font-family: monospace; font-size: 14px; line-height: 1.4; border: 1px solid #0ff; border-radius: 4px; z-index: 100; }
+    #keyInfo b { color: #fff; }
+  </style>
+</head>
+<body>
+  <div id="info">Escenario con Lluvia y Neblina</div>
+  <div id="loading">...</div>
+  <div id="keyInfo">
+    
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "../build/three.module.js",
+      "three/addons/": "./jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+  import * as THREE from 'three';
+  import Stats from 'three/addons/libs/stats.module.js';
+  import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+  import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+  import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+  import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+  import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+  import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+  import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+  import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+  import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
+  import { Audio, AudioListener, AudioLoader } from 'three';
+
+  let camera, scene, renderer, stats, object, loader, mixer;
+  let composer, bloomPass, fxaaPass;
+  let rainParticles;
+  const clock = new THREE.Clock();
+
+  const params = {
+    asset: 'Breakdance Ending 2',
+    bloomStrength: 0,
+    bloomRadius: 0,
+    bloomThreshold: 0.4,
+    // Parámetros de niebla lineal:
+    fogNear: 100,    // distancia donde empieza a notarse
+    fogFar: 800,     // distancia donde llega a densidad máxima
+    autoRotate: true,
+    autoRotateSpeed: 0.5,
+    rainSpeed: 1.0,
+    windSpeed: 1.0,
+    windAngle: 90,
+    windPreset: 0,
+    rainColor: 0xffffff
+  };
+
+  const windPresets = [
+    { name: 'Calmado', speed: 0.2, angle: 90 },
+    { name: 'Brisa', speed: 1.0, angle: 90 },
+    { name: 'Viento Fuerte', speed: 3.0, angle: 90 },
+    { name: 'Tormenta', speed: 6.0, angle: 180 }
+  ];
+
+  const manager = new THREE.LoadingManager();
+  manager.onLoad = () => document.getElementById('loading').style.display = 'none';
+
+  init();
+
+  function init() {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 1, 3000);
+    camera.position.set(200, 250, 400);
+
+    scene = new THREE.Scene();
+    scene.fog = new THREE.Fog(0x000022, params.fogNear, params.fogFar);
+
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 3);
+    hemiLight.position.set(0, 300, 0);
+    scene.add(hemiLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 5);
+    dirLight.position.set(0, 350, 150);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.set(2048, 2048);
+    dirLight.shadow.camera.near = 0.5;
+    dirLight.shadow.camera.far = 1000;
+    dirLight.shadow.camera.left = -500;
+    dirLight.shadow.camera.right = 500;
+    dirLight.shadow.camera.top = 500;
+    dirLight.shadow.camera.bottom = -500;
+    scene.add(dirLight);
+
+    const texLoader = new THREE.TextureLoader(manager);
+    const floorTex = texLoader.load('textures/floor.jpg');
+    floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
+    floorTex.repeat.set(20,20);
+    const normalMap = texLoader.load('textures/floor_normal.jpg');
+    const roughMap = texLoader.load('textures/floor_roughness.jpg');
+    const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, normalMap, roughnessMap: roughMap, roughness:0.1, metalness:0.7, envMapIntensity:1.5 });
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(2000,2000), floorMat);
+    floor.rotation.x = -Math.PI/2;
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    const grid = new THREE.GridHelper(2000,40,0x00ffff,0x00ffff);
+    grid.material.opacity=0.3; grid.material.transparent=true; grid.material.depthWrite=false;
+    scene.add(grid);
+
+    loader = new FBXLoader(manager);
+    loadAsset(params.asset);
+
+    renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.5;
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0,100,0);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.autoRotate = params.autoRotate;
+    controls.autoRotateSpeed = params.autoRotateSpeed;
+
+    const renderPass = new RenderPass(scene,camera);
+    bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth,window.innerHeight), params.bloomStrength, params.bloomRadius, params.bloomThreshold);
+    composer = new EffectComposer(renderer);
+    composer.addPass(renderPass);
+    composer.addPass(bloomPass);
+    fxaaPass = new ShaderPass(FXAAShader);
+    fxaaPass.material.uniforms['resolution'].value.set(1/window.innerWidth,1/window.innerHeight);
+    composer.addPass(fxaaPass);
+
+    stats = new Stats(); container.appendChild(stats.dom);
+
+    const gui = new GUI();
+    gui.add(params,'asset').onChange(loadAsset);
+    const bloomFold = gui.addFolder('Bloom');
+    bloomFold.add(params,'bloomStrength',0,3).onChange(updateBloom);
+    bloomFold.add(params,'bloomRadius',0,1).onChange(updateBloom);
+    bloomFold.add(params,'bloomThreshold',0,1).onChange(updateBloom);
+
+    const fogFold = gui.addFolder('Neblina lineal');
+    fogFold.add(params,'fogNear', 0, 1000).name('Near').onChange(v=> scene.fog.near = v);
+    fogFold.add(params,'fogFar',  0, 3000).name('Far').onChange(v=> scene.fog.far  = v);
+
+    const rainFold = gui.addFolder('Rain');
+    rainFold.add(params,'rainSpeed',0,5).name('Rain Speed');
+    rainFold.add(params,'windSpeed',0,10).name('Wind Speed');
+    rainFold.add(params,'windAngle',0,360).step(10).name('Wind Angle');
+    rainFold.add(params,'windPreset',{Calmado:0,Brisa:1,'Viento Fuerte':2,Tormenta:3}).name('Wind Preset').onChange(applyPreset);
+
+    new RGBELoader(manager).setPath('models/rgbe/').load('shanghai_bund_4k.hdr',tex=>{
+      tex.mapping = THREE.EquirectangularReflectionMapping;
+      scene.background = tex; scene.environment = tex;
+    });
+
+    const listener = new AudioListener(); camera.add(listener);
+    const sound = new Audio(listener);
+    new AudioLoader(manager).load('models/rgbe/TXT.mp3',buf=>{
+      sound.setBuffer(buf); sound.setLoop(true); sound.setVolume(0.5); sound.play();
+    });
+
+    createRain();
+    window.addEventListener('resize', onWindowResize);
+    window.addEventListener('keydown', onKeyDown);
+    renderer.setAnimationLoop(animate);
+  }
+
+  function applyPreset(idx){
+    const p = windPresets[idx];
+    params.windSpeed = p.speed;
+    params.windAngle = p.angle;
+  }
+
+  function createRain(){
+    const count=15000, pos=new Float32Array(count*3);
+    for(let i=0;i<count;i++){
+      pos[i*3]   = (Math.random()-0.5)*2000;
+      pos[i*3+1] = Math.random()*1000;
+      pos[i*3+2] = (Math.random()-0.5)*2000;
+    }
+    const geo = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(pos,3));
+    const mat = new THREE.PointsMaterial({ size:2, color:params.rainColor, transparent:true });
+    mat.fog = false;
+    rainParticles = new THREE.Points(geo, mat);
+    rainParticles.renderOrder = 1;
+    scene.add(rainParticles);
+  }
+
+  function animate(){
+    const delta = clock.getDelta();
+    if(mixer) mixer.update(delta*0.5);
+
+    if(rainParticles){
+      const pos = rainParticles.geometry.attributes.position.array;
+      const cnt = pos.length/3;
+      const rad = params.windAngle * Math.PI/180;
+      const dx = Math.cos(rad), dz = Math.sin(rad);
+      for(let i=0;i<cnt;i++){
+        const idx=i*3;
+        pos[idx+1] -= params.rainSpeed;
+        pos[idx]   += params.windSpeed * dx * (0.5 + Math.random()*0.5);
+        pos[idx+2] += params.windSpeed * dz * (0.5 + Math.random()*0.5);
+        if(pos[idx+1]<0){
+          pos[idx+1]=Math.random()*500+500;
+          pos[idx]   =(Math.random()-0.5)*2000;
+          pos[idx+2] =(Math.random()-0.5)*2000;
+        }
+      }
+      rainParticles.geometry.attributes.position.needsUpdate=true;
+    }
+
+    composer.render();
+    stats.update();
+  }
+
+  function onWindowResize(){
+    camera.aspect=window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth,window.innerHeight);
+    composer.setSize(window.innerWidth,window.innerHeight);
+    fxaaPass.material.uniforms['resolution'].value.set(1/window.innerWidth,1/window.innerHeight);
+  }
+
+  function onKeyDown(e){
+    switch(e.key){
+      case 'ArrowUp':    params.rainSpeed+=0.2; break;
+      case 'ArrowDown':  params.rainSpeed=Math.max(0,params.rainSpeed-0.2); break;
+      case 'v': case 'V': params.windAngle = (params.windAngle + 10) % 360; break;
+      case 'x': case 'X': params.windAngle = (params.windAngle + 350) % 360; break;
+      case '1': case '2': case '3': case '4':
+        params.windPreset = Number(e.key)-1; applyPreset(params.windPreset); break;
+      case 'r': case 'R': params.rainColor=0xff0000; rainParticles.material.color.set(params.rainColor); break;
+      case 'g': case 'G': params.rainColor=0x00ff00; rainParticles.material.color.set(params.rainColor); break;
+      case 'b': case 'B': params.rainColor=0x0000ff; rainParticles.material.color.set(params.rainColor); break;
+      case 'w': case 'W': params.rainColor=0xffffff; rainParticles.material.color.set(params.rainColor); break;
+      case 'ArrowLeft':
+        // DISMINUIR densidad de niebla: alejamos el plano far
+        params.fogFar += 20;
+        scene.fog.far = params.fogFar;
+        break;
+      case 'ArrowRight':
+        
+        // AUMENTAR densidad de niebla: acercamos el plano far (pero sin cruzar near)
+        params.fogFar = Math.max(params.fogNear + 10, params.fogFar - 20);
+        scene.fog.far = params.fogFar;
+        break;
+      case 'a': case 'A': scene.fog.color.set(0xff0000); break;
+      case 's': case 'S': scene.fog.color.set(0x00ff00); break;
+      case 'd': case 'D': scene.fog.color.set(0x0000ff); break;
+      case 'f': case 'F': scene.fog.color.set(0xffffff); break;
+    }
+  }
+
+  function updateBloom(){
+    bloomPass.strength=params.bloomStrength;
+    bloomPass.radius=params.bloomRadius;
+    bloomPass.threshold=params.bloomThreshold;
+  }
+
+  function loadAsset(asset){
+    loader.load('models/fbx/'+asset+'.fbx', group=>{
+      if(object) scene.remove(object);
+      object=group; mixer=new THREE.AnimationMixer(object);
+      mixer.clipAction(object.animations[0]).play();
+      object.traverse(child=>{
+        if(child.isMesh){
+          child.material=new THREE.MeshStandardMaterial({
+            color:0x00ccff, transparent:true, opacity:1.4,
+            roughness:0.05, metalness:1.0, envMapIntensity:2.0,
+          });
+        }
+      });
+      scene.add(object);
+    });
+  }
+  </script>
+</body>
+</html>
+
+
