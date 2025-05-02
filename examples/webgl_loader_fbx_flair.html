@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <title>Escenario 3D con Efectos Avanzados</title>
+<<<<<<< HEAD
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
@@ -295,3 +296,510 @@
 </html>
 
 
+=======
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { margin: 0; overflow: hidden; }
+    #info { 
+      position: absolute; 
+      top: 10px; 
+      width: 100%; 
+      text-align: center; 
+      z-index: 100; 
+      color: white; 
+      font-family: sans-serif;
+      text-shadow: 0 0 10px rgba(0,200,255,0.7);
+    }
+    #loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: white;
+      font-family: sans-serif;
+      font-size: 24px;
+      text-shadow: 0 0 10px rgba(0,200,255,0.7);
+    }
+  </style>
+</head>
+<body>
+  <div id="info">Escenario 3D con Efectos Avanzados</div>
+  <div id="loading">Cargando...</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "../build/three.module.js",
+    "three/addons/": "./jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import Stats from 'three/addons/libs/stats.module.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
+import { Audio, AudioListener, AudioLoader } from 'three';
+
+let camera, scene, renderer, stats, object, loader, guiMorphsFolder, mixer, particles;
+let composer, bloomPass, fxaaPass;
+let pointLightBlue, pointLightRed, dirLight2, dirLight3;
+const clock = new THREE.Clock();
+const params = {
+  asset: 'Breakdance Ending 2',
+  bloomStrength: 1.5,
+  bloomRadius: 0.4,
+  bloomThreshold: 0.4,
+  fogDensity: 0.03,
+  particleSpeed: 0.5,
+  autoRotate: true,
+  autoRotateSpeed: 0.5
+};
+const manager = new THREE.LoadingManager();
+
+// Mostrar/ocultar carga
+manager.onLoad = function() {
+  document.getElementById('loading').style.display = 'none';
+};
+
+init();
+
+function init() {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+
+  // Cámara
+  camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 3000);
+  camera.position.set(200, 250, 400);
+
+  scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x000022, params.fogDensity);
+
+  // Luces principales
+  const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 3);
+  hemiLight.position.set(0, 300, 0);
+  scene.add(hemiLight);
+
+  const dirLight = new THREE.DirectionalLight(0xffffff, 5);
+  dirLight.position.set(0, 350, 150);
+  dirLight.castShadow = true;
+  dirLight.shadow.mapSize.width = 2048;
+  dirLight.shadow.mapSize.height = 2048;
+  dirLight.shadow.camera.near = 0.5;
+  dirLight.shadow.camera.far = 1000;
+  dirLight.shadow.camera.left = -500;
+  dirLight.shadow.camera.right = 500;
+  dirLight.shadow.camera.top = 500;
+  dirLight.shadow.camera.bottom = -500;
+  scene.add(dirLight);
+
+  // Luces de ambiente dinámicas
+  pointLightBlue = new THREE.PointLight(0x3399ff, 5, 600);
+  pointLightBlue.position.set(-300, 200, 200);
+  pointLightBlue.castShadow = true;
+  scene.add(pointLightBlue);
+
+  pointLightRed = new THREE.PointLight(0xff3333, 5, 600);
+  pointLightRed.position.set(300, 200, -200);
+  pointLightRed.castShadow = true;
+  scene.add(pointLightRed);
+
+  dirLight2 = new THREE.DirectionalLight(0xffffaa, 4);
+  dirLight2.position.set(-200, 400, 300);
+  scene.add(dirLight2);
+
+  dirLight3 = new THREE.DirectionalLight(0xaaffff, 4);
+  dirLight3.position.set(200, 400, -300);
+  scene.add(dirLight3);
+
+  // Luces de neón adicionales
+  const neonLight1 = new THREE.PointLight(0x00ffff, 10, 200);
+  neonLight1.position.set(0, 50, 100);
+  scene.add(neonLight1);
+
+  const neonLight2 = new THREE.PointLight(0xff00ff, 10, 200);
+  neonLight2.position.set(0, 50, -100);
+  scene.add(neonLight2);
+
+  const ambientLight = new THREE.AmbientLight(0x404040, 1.5);
+  scene.add(ambientLight);
+
+  // Suelo con mejor reflejo
+  const textureLoader = new THREE.TextureLoader(manager);
+  const floorTexture = textureLoader.load('textures/floor.jpg');
+  floorTexture.wrapS = floorTexture.wrapT = THREE.RepeatWrapping;
+  floorTexture.repeat.set(20, 20);
+  const normalMap = textureLoader.load('textures/floor_normal.jpg');
+  const roughnessMap = textureLoader.load('textures/floor_roughness.jpg');
+
+  const floorMaterial = new THREE.MeshStandardMaterial({
+    map: floorTexture,
+    normalMap: normalMap,
+    roughnessMap: roughnessMap,
+    roughness: 0.1,
+    metalness: 0.7,
+    envMapIntensity: 1.5
+  });
+
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(2000, 2000), floorMaterial);
+  floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
+  scene.add(floor);
+
+  // Grid con efecto de neón
+  const grid = new THREE.GridHelper(2000, 40, 0x00ffff, 0x00ffff);
+  grid.material.opacity = 0.3;
+  grid.material.transparent = true;
+  grid.material.depthWrite = false;
+  scene.add(grid);
+
+  loader = new FBXLoader(manager);
+  loadAsset(params.asset);
+
+  // Renderer con configuración avanzada
+  renderer = new THREE.WebGLRenderer({ 
+    antialias: true,
+    powerPreference: "high-performance"
+  });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.5;
+  container.appendChild(renderer.domElement);
+
+  // Controles de órbita con auto-rotación configurable
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 100, 0);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.05;
+  controls.autoRotate = params.autoRotate;
+  controls.autoRotateSpeed = params.autoRotateSpeed;
+
+  // Configuración de post-procesado
+  const renderScene = new RenderPass(scene, camera);
+  bloomPass = new UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    params.bloomStrength,
+    params.bloomRadius,
+    params.bloomThreshold
+  );
+  
+  composer = new EffectComposer(renderer);
+  composer.addPass(renderScene);
+  composer.addPass(bloomPass);
+  
+  fxaaPass = new ShaderPass(FXAAShader);
+  fxaaPass.material.uniforms['resolution'].value.set(
+    1 / window.innerWidth,
+    1 / window.innerHeight
+  );
+  composer.addPass(fxaaPass);
+
+  // Eventos
+  window.addEventListener('resize', onWindowResize);
+
+  // Stats
+  stats = new Stats();
+  container.appendChild(stats.dom);
+
+  // GUI
+  const gui = new GUI();
+  gui.add(params, 'asset').onChange(loadAsset);
+  
+  const bloomFolder = gui.addFolder('Bloom Effect');
+  bloomFolder.add(params, 'bloomStrength', 0, 3).onChange(updateBloom);
+  bloomFolder.add(params, 'bloomRadius', 0, 1).onChange(updateBloom);
+  bloomFolder.add(params, 'bloomThreshold', 0, 1).onChange(updateBloom);
+  
+  const fogFolder = gui.addFolder('Fog Settings');
+  fogFolder.add(params, 'fogDensity', 0, 0.1).onChange(function(value) {
+    scene.fog.density = value;
+  });
+  
+  const particleFolder = gui.addFolder('Particle Settings');
+  particleFolder.add(params, 'particleSpeed', 0, 2).name('Speed');
+  
+  const controlsFolder = gui.addFolder('Camera Controls');
+  controlsFolder.add(params, 'autoRotate').onChange(function(value) {
+    controls.autoRotate = value;
+  });
+  controlsFolder.add(params, 'autoRotateSpeed', 0.1, 2).onChange(function(value) {
+    controls.autoRotateSpeed = value;
+  });
+  
+  guiMorphsFolder = gui.addFolder('Morphs').hide();
+
+  // HDR Environment
+  new RGBELoader(manager)
+    .setPath('models/rgbe/')
+    .load('shanghai_bund_4k.hdr', (texture) => {
+      texture.mapping = THREE.EquirectangularReflectionMapping;
+      scene.background = texture;
+      scene.environment = texture;
+    });
+
+  // Audio
+  const listener = new AudioListener();
+  camera.add(listener);
+  const sound = new Audio(listener);
+  new AudioLoader(manager).load('models/rgbe/TXT.mp3', (buffer) => {
+    sound.setBuffer(buffer);
+    sound.setLoop(true);
+    sound.setVolume(0.5);
+    sound.play();
+  });
+
+  // Crear efectos especiales
+  createParticles();
+  createFogPlane();
+  createLightBeams();
+
+  // Iniciar animación
+  renderer.setAnimationLoop(animate);
+}
+
+function updateBloom() {
+  bloomPass.strength = params.bloomStrength;
+  bloomPass.radius = params.bloomRadius;
+  bloomPass.threshold = params.bloomThreshold;
+}
+
+function createParticles() {
+  const particlesGeometry = new THREE.BufferGeometry();
+  const particleCount = 2000;
+  const positions = new Float32Array(particleCount * 3);
+  const colors = new Float32Array(particleCount * 3);
+  const sizes = new Float32Array(particleCount);
+
+  const colorPalette = [
+    new THREE.Color(0x3399ff), // Azul
+    new THREE.Color(0x00ffff), // Cian
+    new THREE.Color(0x0066ff), // Azul oscuro
+    new THREE.Color(0xffffff)  // Blanco
+  ];
+
+  for (let i = 0; i < particleCount; i++) {
+    // Posiciones aleatorias en una esfera
+    const radius = Math.random() * 400 + 100;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.random() * Math.PI;
+    
+    positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
+    positions[i * 3 + 1] = radius * Math.cos(phi);
+    positions[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
+    
+    // Colores aleatorios de la paleta
+    const color = colorPalette[Math.floor(Math.random() * colorPalette.length)];
+    colors[i * 3] = color.r;
+    colors[i * 3 + 1] = color.g;
+    colors[i * 3 + 2] = color.b;
+    
+    // Tamaños aleatorios
+    sizes[i] = Math.random() * 8 + 2;
+  }
+
+  particlesGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  particlesGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  particlesGeometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+  const particlesMaterial = new THREE.PointsMaterial({
+    size: 6,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.9,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    sizeAttenuation: true
+  });
+
+  particles = new THREE.Points(particlesGeometry, particlesMaterial);
+  scene.add(particles);
+
+  // Segundo sistema de partículas para más densidad
+  const particles2Geometry = new THREE.BufferGeometry();
+  const particles2Material = new THREE.PointsMaterial({
+    size: 3,
+    color: 0x00ffff,
+    transparent: true,
+    opacity: 0.6,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    sizeAttenuation: true
+  });
+
+  const particles2Positions = new Float32Array(particleCount * 3);
+  for (let i = 0; i < particleCount * 3; i++) {
+    particles2Positions[i] = (Math.random() - 0.5) * 1000;
+  }
+  particles2Geometry.setAttribute('position', new THREE.BufferAttribute(particles2Positions, 3));
+  
+  const particles2 = new THREE.Points(particles2Geometry, particles2Material);
+  scene.add(particles2);
+}
+
+function createFogPlane() {
+  // Crear un plano de niebla volumétrica
+  const fogGeometry = new THREE.PlaneGeometry(2000, 2000, 20, 20);
+  const fogMaterial = new THREE.MeshStandardMaterial({
+    color: 0x3399ff,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0.05,
+    metalness: 0.9,
+    roughness: 0.1
+  });
+
+  const fogPlane = new THREE.Mesh(fogGeometry, fogMaterial);
+  fogPlane.rotation.x = Math.PI / 2;
+  fogPlane.position.y = 50;
+  scene.add(fogPlane);
+
+  // Segundo plano de niebla más alto
+  const fogPlane2 = fogPlane.clone();
+  fogPlane2.position.y = 300;
+  fogPlane2.material.opacity = 0.03;
+  scene.add(fogPlane2);
+}
+
+function createLightBeams() {
+  // Rayos de luz volumétricos
+  const lightBeamGeometry = new THREE.CylinderGeometry(5, 20, 500, 32, 1, true);
+  const lightBeamMaterial = new THREE.MeshStandardMaterial({
+    color: 0x00ffff,
+    side: THREE.BackSide,
+    transparent: true,
+    opacity: 0.2,
+    blending: THREE.AdditiveBlending
+  });
+
+  const lightBeam1 = new THREE.Mesh(lightBeamGeometry, lightBeamMaterial);
+  lightBeam1.position.set(-200, 250, 0);
+  lightBeam1.rotation.z = Math.PI / 4;
+  scene.add(lightBeam1);
+
+  const lightBeam2 = new THREE.Mesh(lightBeamGeometry, lightBeamMaterial);
+  lightBeam2.position.set(200, 250, 0);
+  lightBeam2.rotation.z = -Math.PI / 4;
+  scene.add(lightBeam2);
+
+  // Material diferente para rayos de luz rojos
+  const redLightBeamMaterial = lightBeamMaterial.clone();
+  redLightBeamMaterial.color.set(0xff00ff);
+
+  const lightBeam3 = new THREE.Mesh(lightBeamGeometry, redLightBeamMaterial);
+  lightBeam3.position.set(0, 250, -200);
+  lightBeam3.rotation.x = Math.PI / 4;
+  scene.add(lightBeam3);
+
+  const lightBeam4 = new THREE.Mesh(lightBeamGeometry, redLightBeamMaterial);
+  lightBeam4.position.set(0, 250, 200);
+  lightBeam4.rotation.x = -Math.PI / 4;
+  scene.add(lightBeam4);
+}
+
+function loadAsset(asset) {
+  loader.load('models/fbx/' + asset + '.fbx', (group) => {
+    if (object) scene.remove(object);
+    object = group;
+
+    mixer = new THREE.AnimationMixer(object);
+    const action = mixer.clipAction(object.animations[0]);
+    action.play();
+
+    object.traverse((child) => {
+      if (child.isMesh) {
+        // Material con efecto de neón
+        child.material = new THREE.MeshStandardMaterial({
+          color: 0x00ccff,
+          transparent: true,
+          opacity: 1.4,
+          roughness: 0.05,
+          metalness: 1.0,
+          envMapIntensity: 2.0,
+          emissive: 0x00aaff,
+          emissiveIntensity: 0.5
+        });
+        child.castShadow = true;
+        child.receiveShadow = true;
+        
+        // Añadir borde de neón
+        const edges = new THREE.EdgesGeometry(child.geometry, 15);
+        const edgeMaterial = new THREE.LineBasicMaterial({ 
+          color: 0x00ffff, 
+          linewidth: 2,
+          transparent: true,
+          opacity: 0.8
+        });
+        const line = new THREE.LineSegments(edges, edgeMaterial);
+        child.add(line);
+      }
+    });
+
+    scene.add(object);
+  });
+}
+
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  composer.setSize(window.innerWidth, window.innerHeight);
+  fxaaPass.material.uniforms['resolution'].value.set(
+    1 / window.innerWidth,
+    1 / window.innerHeight
+  );
+}
+
+function animate() {
+  const delta = clock.getDelta();
+  const time = Date.now() * 0.001 * params.particleSpeed;
+
+  // Animación del mixer
+  if (mixer) mixer.update(delta * 0.5);
+
+  // Animación de partículas
+  if (particles) {
+    particles.rotation.y = time * 0.1;
+    
+    const positions = particles.geometry.attributes.position.array;
+    for (let i = 0; i < positions.length; i += 3) {
+      // Movimiento en espiral
+      positions[i] += Math.sin(time + i * 0.01) * 0.5;
+      positions[i + 1] += Math.cos(time + i * 0.01) * 0.3;
+      positions[i + 2] += Math.sin(time * 0.5 + i * 0.02) * 0.5;
+    }
+    particles.geometry.attributes.position.needsUpdate = true;
+  }
+
+  // Animación de luces
+  pointLightBlue.position.x = Math.sin(time * 0.7) * 400;
+  pointLightBlue.position.z = Math.cos(time * 0.5) * 300;
+  pointLightBlue.intensity = Math.sin(time * 2) * 2 + 5;
+
+  pointLightRed.position.x = Math.cos(time * 0.6) * 350;
+  pointLightRed.position.z = Math.sin(time * 0.4) * 350;
+  pointLightRed.intensity = Math.cos(time * 1.5) * 2 + 5;
+
+  dirLight2.position.x = Math.sin(time * 0.3) * 500;
+  dirLight2.position.z = Math.cos(time * 0.2) * 500;
+
+  dirLight3.position.x = Math.cos(time * 0.4) * 500;
+  dirLight3.position.z = Math.sin(time * 0.3) * 500;
+
+  // Render con post-procesado
+  composer.render();
+  stats.update();
+}
+</script>
+</body>
+</html>
+>>>>>>> d5611190c24f5b2c9435ac36f0a1e92234fb4c23
